@@ -1,0 +1,17 @@
+# Repo-level tool configuration only (the installable packages have their own pyproject.toml).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Make each service's top-level package importable in tests: `import app`, `import worker`.
+pythonpath = ["services/api_gateway", "services/agent_worker"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common", "app", "worker"]

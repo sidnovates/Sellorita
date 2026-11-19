@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+results.xml
+.coverage
+htmlcov/
+
+# Secrets — never commit; copy .env.example to .env instead
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+dist/
+
+# Local render scratch output
+renders/
+*.mp4
+!tests/fixtures/*.mp4
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

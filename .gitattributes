@@ -1,0 +1,8 @@
+# Store text files with LF line endings in the repo and check them out as LF,
+# so scripts and configs work unchanged inside Linux containers.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary
+*.mp4 binary

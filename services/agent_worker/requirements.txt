@@ -1,0 +1,2 @@
+# Agent worker runtime dependencies (sellorita-common is installed separately from libs/common).
+# Celery and LangGraph are added in Steps 3 and 4.
