@@ -27,7 +27,7 @@ Dev A's track is heavier in Phases 1–2, so:
 ## Phase 1: Foundation & Local Docker Compose Stack (Days 1–3)
 
 ### Developer A Tasks
-0. **Day-1 HyperFrames spike (time-boxed, ~half day):** Confirm the HyperFrames CLI/npm package renders a sample HTML/GSAP scene to MP4 headless inside a Linux container with Chromium + FFmpeg. Share the exact install steps with Dev B for `Dockerfile.worker`. Note the result; if it fails, fallback is Playwright frame capture + FFmpeg.
+0. ✅ **DONE — PASS, see [docs/hyperframes_spike.md](../docs/hyperframes_spike.md).** **Day-1 HyperFrames spike (time-boxed, ~half day):** Confirm the HyperFrames CLI/npm package renders a sample HTML/GSAP scene to MP4 headless inside a Linux container with Chromium + FFmpeg. Share the exact install steps with Dev B for `Dockerfile.worker`. Note the result; if it fails, fallback is Playwright frame capture + FFmpeg.
 1. **Initialize Monorepo & Shared Library:**
    * Create `libs/common` (installable package): `settings.py` (pydantic-settings), `logger.py` (structlog JSON, routes uvicorn/celery logs too), `db.py`, `models.py`, `schemas.py` (incl. `CampaignState`), `storage.py` (internal + public MinIO clients).
    * Create `services/api_gateway` and `services/agent_worker` depending on `libs/common`.
