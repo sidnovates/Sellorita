@@ -17,6 +17,11 @@ dependencies = [
     "asyncpg>=0.30",
     "psycopg[binary]>=3.2,<4",
     "alembic>=1.14,<2",
+    # Object storage: boto3 speaks plain S3, so it works with MinIO or any S3 drop-in.
+    "boto3>=1.35,<2",
+    # Task queue: the API only publishes tasks, the worker consumes them; both share
+    # the same Celery configuration from common/queue.py. [redis] pulls in redis-py.
+    "celery[redis]>=5.4,<6",
 ]
 
 [project.scripts]

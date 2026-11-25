@@ -23,7 +23,9 @@ target_metadata = Base.metadata
 
 # Tests can hand over a ready connection or a URL via `config.attributes`; otherwise the
 # URL comes from the environment like every other service.
-if "connection" not in config.attributes:
+# Configure logging only when run as a command (cmd_opts is set by the CLI). When
+# Alembic is called from inside another process (tests), that process owns logging.
+if config.cmd_opts is not None:
     configure_logging(service_name="db-migrate")
 log = get_logger("alembic.env")
 

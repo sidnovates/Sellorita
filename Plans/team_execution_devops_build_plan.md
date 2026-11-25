@@ -33,7 +33,8 @@ Dev A's track is heavier in Phases 1–2, so:
    * Create `services/api_gateway` and `services/agent_worker` depending on `libs/common`.
    * Write `docker/docker-compose.dev.yml` (postgres, redis, minio only) for app development; handed to Dev B afterwards.
 2. **Build DB Layer & Core FastAPI Endpoints:**
-   * ✅ **DONE — DB layer:** `docker/docker-compose.dev.yml`, `common/db.py`, `common/models.py`, initial Alembic migration `0001`, `sellorita-migrate` command, `tests/test_db.py`. Endpoints + `storage.py` are next.
+   * ✅ **DONE — DB layer:** `docker/docker-compose.dev.yml`, `common/db.py`, `common/models.py`, initial Alembic migration `0001`, `sellorita-migrate` command, `tests/test_db.py`.
+   * ✅ **DONE — Step 3:** `common/storage.py` (internal + public boto3 clients), `common/queue.py` (shared Celery config, task names), API schemas, `/healthz`, `/readyz`, `POST/GET /shops`, `POST /shops/{id}/assets`, `POST /campaigns/generate` (`send_task` → `campaigns` queue, `202`), `GET /campaigns/{id}`, request-ID + structured access log middleware, `tests/test_api.py`.
    * SQLAlchemy 2.0 models (`shops`, `products_offers`, `campaigns` incl. `FAILED` status, `qa_feedback`, `retry_count`, `error_message`) and the initial **Alembic** migration.
    * Implement `/healthz`, `/readyz`, `/shops`, `/shops/{shop_id}/assets` (MinIO upload), `/campaigns/generate` (Celery `.delay()` dispatch, `202`), `GET /campaigns/{id}`.
 3. **Implement Mocked LangGraph Pipeline:**

@@ -7,7 +7,7 @@ Design: [Plans/system_architecture.md](Plans/system_architecture.md) · Build pl
 
 | Path | Owner | Contents |
 | --- | --- | --- |
-| `libs/common/` | Dev A | Shared package: settings, JSON logger, schemas, DB models + Alembic migrations (storage added next) |
+| `libs/common/` | Dev A | Shared package: settings, JSON logger, schemas, DB models + Alembic migrations, MinIO storage, Celery config |
 | `services/api_gateway/` | Dev A | FastAPI app (`app` package) |
 | `services/agent_worker/` | Dev A | Celery + LangGraph worker (`worker` package) |
 | `tests/` | Dev A | pytest suite |
@@ -27,11 +27,13 @@ pytest
 uvicorn app.main:app --app-dir services/api_gateway --reload
 ```
 
-Then open http://localhost:8000/api/v1/healthz. The MinIO console is at http://localhost:9001
+Then open http://localhost:8000/api/v1/docs (interactive API docs) or http://localhost:8000/api/v1/readyz. The MinIO console is at http://localhost:9001
 (user `sellorita`, password `sellorita_dev`, local-only defaults from `.env.example`).
 
-`tests/test_db.py` needs Postgres running. It creates and drops its own `sellorita_test`
-database, and skips with a message if Postgres is unreachable.
+The integration tests need the dev services running. They use their own `sellorita_test`
+database and `sellorita-test` bucket (see `tests/conftest.py`), and skip with a message if a
+service is unreachable. Until the worker exists (Step 4), `POST /campaigns/generate` leaves the
+task waiting in the Redis `campaigns` list.
 
 ### Changing the database schema
 
@@ -51,6 +53,14 @@ and migrations drift apart.
   can run them. Use `sellorita-migrate` (no arguments, which means `upgrade head`) as the command of the
   compose `migrate` service and of `k8s/jobs/db-migrate.yaml`. It reads the same `POSTGRES_*` env vars
   as the services and exits non-zero on failure.
+* **API image vs worker image:** the API publishes tasks by name (`send_task`) and never imports
+  `worker`, so `Dockerfile.api` needs only `libs/common` + `services/api_gateway`. Start command:
+  `uvicorn app.main:app --host 0.0.0.0 --port 8000` (the app writes its own JSON access log).
+  Probes: liveness `GET /api/v1/healthz`, readiness `GET /api/v1/readyz` (503 while Postgres, Redis or
+  MinIO is unreachable).
+* **KEDA:** tasks land in the Redis list `campaigns` on DB 0 (`LLEN campaigns` = queue length).
+* **Presigned URLs through the ingress:** route `/sellorita-media/` to MinIO with the path and `Host`
+  unchanged, and set `MINIO_PUBLIC_ENDPOINT` to the ingress origin (see DESIGN.md 4.2).
 * **MinIO image:** `minio/minio` is gone from Docker Hub and quay.io. Use the pinned Pigsty build from
   `docker/docker-compose.dev.yml` (`pgsty/minio`, `pgsty/mc`). It has `bash` but no `curl`/`grep`; the
   compose healthcheck shows a probe that works. In K8s, use an `httpGet` probe on

@@ -5,6 +5,10 @@ testpaths = ["tests"]
 # Make each service's top-level package importable in tests: `import app`, `import worker`.
 pythonpath = ["services/api_gateway", "services/agent_worker"]
 addopts = "-q"
+filterwarnings = [
+    # Raised inside fastapi.testclient itself, not by our code.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
 [tool.ruff]
 line-length = 100

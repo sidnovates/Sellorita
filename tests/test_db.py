@@ -1,8 +1,7 @@
 """Database layer tests: models, the Alembic migration, and the session helpers.
 
-The integration tests need PostgreSQL from docker/docker-compose.dev.yml (or the CI
-service container). They create a throwaway `sellorita_test` database, so they never
-touch your dev data. If PostgreSQL is unreachable they are skipped with a clear reason.
+Integration tests use the `migrated_db` / `clean_tables` fixtures from conftest.py
+(a throwaway `sellorita_test` database; skipped with a reason if Postgres is down).
 """
 
 from __future__ import annotations
@@ -13,18 +12,13 @@ import uuid
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import URL, create_engine, inspect, make_url, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.exc import IntegrityError, StatementError
 
 from common import db
-from common.migrate import ALEMBIC_INI
 from common.models import Base, Campaign, ProductOffer, Shop
 from common.schemas import CampaignFormat, CampaignStatus, CampaignTrigger, ScheduleFrequency
-from common.settings import Settings, get_settings
-
-TEST_DB = "sellorita_test"
 
 # --- Unit tests (no database) ------------------------------------------------------------
 
@@ -56,64 +50,6 @@ def make_shop(**overrides) -> Shop:
         schedule_frequency=ScheduleFrequency.DAILY,
     )
     return Shop(**(fields | overrides))
-
-
-# --- Integration fixtures ------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def test_db_url() -> URL:
-    """Create an empty `sellorita_test` database, drop it after the module."""
-    base_url = make_url(Settings().database_url_sync)
-    admin = create_engine(
-        base_url.set(database="postgres"),
-        isolation_level="AUTOCOMMIT",
-        connect_args={"connect_timeout": 3},  # skip fast instead of hanging
-    )
-    try:
-        with admin.connect() as conn:
-            conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"))
-            conn.execute(text(f"CREATE DATABASE {TEST_DB}"))
-    except OperationalError as exc:
-        admin.dispose()
-        pytest.skip(
-            "PostgreSQL not reachable; start it with "
-            f"`docker compose -f docker/docker-compose.dev.yml up -d` ({exc.orig})"
-        )
-
-    yield base_url.set(database=TEST_DB)
-
-    with admin.connect() as conn:
-        conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"))
-    admin.dispose()
-
-
-def alembic_config(url: URL) -> Config:
-    cfg = Config(str(ALEMBIC_INI))
-    cfg.attributes["database_url"] = url.render_as_string(hide_password=False)
-    return cfg
-
-
-@pytest.fixture(scope="module")
-def migrated_db(test_db_url: URL):
-    """Run the real migrations, then point common.db at the test database."""
-    command.upgrade(alembic_config(test_db_url), "head")
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("POSTGRES_DB", TEST_DB)
-        get_settings.cache_clear()
-        db.reset_engines()
-        yield test_db_url
-        db.get_sync_engine().dispose()
-    get_settings.cache_clear()
-    db.reset_engines()
-
-
-@pytest.fixture
-def clean_tables(migrated_db):
-    yield
-    with db.session_scope() as session:
-        session.execute(text("TRUNCATE shops CASCADE"))
 
 
 # --- Integration tests ---------------------------------------------------------------------
@@ -238,8 +174,8 @@ def test_async_session_and_ping(clean_tables):
     assert asyncio.run(run()) == (True, "Async Bakery")
 
 
-def test_downgrade_to_base_and_back(migrated_db):
-    cfg = alembic_config(migrated_db)
+def test_downgrade_to_base_and_back(migrated_db, alembic_cfg):
+    cfg = alembic_cfg
     engine = create_engine(migrated_db)
     db.get_sync_engine().dispose()  # release pooled connections holding table locks
     try:

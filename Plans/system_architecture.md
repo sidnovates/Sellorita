@@ -125,7 +125,8 @@ START ─┬─► calendar ─┐
   * `shops/{shop_id}/outputs/{campaign_id}.mp4` (or `.png`)
 * **Presigned URL rule:** a presigned URL's signature includes the host, so two clients are configured:
   * `MINIO_INTERNAL_ENDPOINT` (e.g. `http://minio:9000`) — used by workers/Chromium inside the cluster.
-  * `MINIO_PUBLIC_ENDPOINT` (e.g. `http://<ingress-host>/media`) — used to sign URLs returned to the browser.
+  * `MINIO_PUBLIC_ENDPOINT` (e.g. `http://<ingress-host>`) — used to sign URLs returned to the browser.
+  * The signature also covers the **path** and the `Host` header. URLs are path-style (`<endpoint>/sellorita-media/<key>`), so the ingress must route `/sellorita-media/` to `minio:9000` **without rewriting the path** and must preserve `Host`. Do not use a stripped prefix like `/media`: MinIO would see a different path than was signed and return `403 SignatureDoesNotMatch`.
 
 ### 4.3 Redis Key Conventions
 * Celery Broker: DB `0`; Celery Result Backend: DB `1`

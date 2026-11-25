@@ -1,13 +1,16 @@
-"""Shared enums and the LangGraph `CampaignState` contract (DESIGN.md sections 3 and 4).
-
-API request/response schemas are added here in Step 3.
+"""Shared enums, the LangGraph `CampaignState` contract, and the REST API schemas
+(DESIGN.md sections 3, 4 and 5).
 """
 
 from __future__ import annotations
 
 import operator
+import uuid
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Required, TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- Enums (stored as strings in PostgreSQL, sent as strings over the API) -------------
 
@@ -116,3 +119,78 @@ class CampaignState(TypedDict, total=False):
     # LLMOps metadata. Several nodes append to this key, so it needs a reducer:
     # LangGraph combines updates with `operator.add` (list concatenation).
     llm_usage: Annotated[list[LLMUsage], operator.add]
+
+
+# --- REST API schemas (DESIGN.md section 5) ------------------------------------------------
+
+HexColor = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$", examples=["#7B3F00"])]
+
+
+class ShopCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(min_length=1, max_length=60, examples=["cafe"])
+    city: str = Field(min_length=1, max_length=80, examples=["Bengaluru"])
+    brand_primary_color: HexColor
+    brand_secondary_color: HexColor = "#FFFFFF"
+    brand_font: str = Field(default="Poppins", max_length=60)
+    tone: str = Field(default="friendly", max_length=60)
+    schedule_frequency: ScheduleFrequency = ScheduleFrequency.DAILY
+
+
+class AssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    shop_id: uuid.UUID
+    title: str
+    discount_text: str | None
+    minio_image_key: str
+    is_active: bool
+    image_url: str | None = None  # presigned, public endpoint; filled by the API
+
+
+class ShopResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)  # build directly from ORM objects
+
+    id: uuid.UUID
+    name: str
+    category: str
+    city: str
+    brand_primary_color: str
+    brand_secondary_color: str
+    brand_font: str
+    tone: str
+    logo_minio_key: str | None
+    schedule_frequency: ScheduleFrequency
+    created_at: datetime
+    products: list[AssetResponse] = []
+
+
+class CampaignGenerateRequest(BaseModel):
+    shop_id: uuid.UUID
+    format: CampaignFormat
+
+
+class CampaignQueuedResponse(BaseModel):
+    campaign_id: uuid.UUID
+    status: CampaignStatus
+
+
+class CampaignResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    shop_id: uuid.UUID
+    format: CampaignFormat
+    status: CampaignStatus
+    trigger: CampaignTrigger
+    caption: str | None
+    hashtags: list[str]
+    minio_output_key: str | None
+    media_url: str | None = None  # presigned, public endpoint; None for TWEET / not ready
+    qa_feedback: str | None
+    retry_count: int
+    error_message: str | None
+    scheduled_for: datetime | None
+    created_at: datetime
+    updated_at: datetime
