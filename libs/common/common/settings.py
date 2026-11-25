@@ -21,7 +21,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # The repo-root .env, also when a process runs from services/<name>/ (e.g.
+        # `celery --workdir services/agent_worker`). Later files win. Missing files are
+        # ignored, so containers (no .env, real env vars) are unaffected.
+        env_file=("../../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -48,6 +51,7 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_password: SecretStr = SecretStr("")
+    redis_cache_db: int = 2  # intelligence cache; tests use a separate DB
 
     # --- MinIO (S3-compatible object storage) ----------------------------------------
     # Presigned URL signatures include the host, so the worker (inside the cluster) and
@@ -71,6 +75,14 @@ class Settings(BaseSettings):
     qa_max_retries: int = 2
     intel_cache_ttl_seconds: int = 43200  # 12 hours
     render_scratch_dir: str = Field(default_factory=tempfile.gettempdir)
+    ffmpeg_binary: str = "ffmpeg"
+    schedule_check_interval_seconds: int = 900  # Celery Beat: schedule_due_campaigns
+
+    # --- Mock-mode knobs (only used when MOCK_MODE=true) ------------------------------
+    mock_reel_seconds: int = 3  # length of the dummy MP4 (real FFmpeg encode)
+    # Make the QA critic reject the first N attempts, to demo/test the retry loop and
+    # the FAILED path. 0 = always pass; > QA_MAX_RETRIES = campaign ends FAILED.
+    mock_qa_failures: int = 0
 
     # --- Derived connection URLs -----------------------------------------------------
     @property
@@ -93,7 +105,7 @@ class Settings(BaseSettings):
 
     @property
     def redis_cache_url(self) -> str:
-        return self._redis_url(db=2)
+        return self._redis_url(db=self.redis_cache_db)
 
     def _postgres_url(self, driver: str) -> str:
         user = quote_plus(self.postgres_user)

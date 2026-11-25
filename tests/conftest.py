@@ -24,6 +24,25 @@ from common.storage import get_storage
 
 TEST_DB = "sellorita_test"
 TEST_BUCKET = "sellorita-test"
+TEST_CACHE_DB = 15
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_cache():
+    """Intelligence cache writes go to Redis DB 15, wiped afterwards, never the dev DB 2."""
+    from worker.cache import get_cache
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("REDIS_CACHE_DB", str(TEST_CACHE_DB))
+        get_settings.cache_clear()
+        get_cache.cache_clear()
+        yield
+        try:
+            get_cache().flushdb()
+        except Exception:
+            pass  # Redis not running: nothing was cached
+        get_cache.cache_clear()
+    get_settings.cache_clear()
 
 
 def _refresh_cached_config() -> None:

@@ -8,7 +8,7 @@ import operator
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Required, TypedDict
+from typing import Annotated, NotRequired, Required, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,7 +62,12 @@ class BrandCatalog(TypedDict):
     colors: list[str]
     font: str
     offer: str
-    asset_keys: list[str]
+    asset_keys: list[str]  # featured product first
+    # Extra shop context for the creative director (optional, added in Step 4)
+    category: NotRequired[str]
+    city: NotRequired[str]
+    tone: NotRequired[str]
+    featured_product_id: NotRequired[str | None]
 
 
 class CreativeBrief(TypedDict):

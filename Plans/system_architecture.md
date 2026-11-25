@@ -63,6 +63,7 @@ class CampaignState(TypedDict):
     calendar_context: dict       # {"date": str, "upcoming_festival": str, "days_away": int}
     news_trend_context: dict     # {"local_hook": str, "weather": str, "safe_to_use": bool}
     brand_catalog: dict          # {"name": str, "colors": list[str], "font": str, "offer": str, "asset_keys": list[str]}
+                                 #   + optional "category", "city", "tone", "featured_product_id" (shop context for the director)
     # Populated by Strategy Layer
     creative_brief: dict         # {"hook": str, "script": str, "caption": str, "hashtags": list[str], "cta": str, "theme": str}
     # Populated by Production Layer
@@ -101,6 +102,13 @@ START ─┬─► calendar ─┐
                                  └──────────── retry (retry_count < 2) ◄───────────────────┤
                                                               done ─► END  /  fail ─► mark_failed ─► END
 ```
+
+### Error Handling (implemented in Step 4)
+* **Fatal** (e.g. shop missing): the node raises, the task marks the campaign `FAILED`.
+* **Optional intelligence** (calendar, news): the node *degrades* to a neutral fallback and logs `status=DEGRADED`; the campaign is still produced.
+* **Production errors** (render/upload): written to `state.error`; the QA critic rejects the attempt, so it is retried like a quality failure.
+* **Transient infrastructure errors** (Postgres/Redis connection): the Celery task retries with exponential backoff (max 5); after that the campaign is marked `FAILED`. A campaign never stays in `QUEUED`/`PROCESSING`.
+* **Idempotency:** a task for a campaign that is no longer `QUEUED`/`PROCESSING` is skipped, so a redelivered message never regenerates a finished campaign.
 
 ### Prompt Versioning
 * Each agent's prompt lives in `prompts/{agent_name}/v{N}.md`. The active version is selected via settings (default: latest).

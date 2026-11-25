@@ -30,3 +30,6 @@ renders/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Celery Beat local schedule state
+celerybeat-schedule*

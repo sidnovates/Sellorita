@@ -37,7 +37,7 @@ Dev A's track is heavier in Phases 1–2, so:
    * ✅ **DONE — Step 3:** `common/storage.py` (internal + public boto3 clients), `common/queue.py` (shared Celery config, task names), API schemas, `/healthz`, `/readyz`, `POST/GET /shops`, `POST /shops/{id}/assets`, `POST /campaigns/generate` (`send_task` → `campaigns` queue, `202`), `GET /campaigns/{id}`, request-ID + structured access log middleware, `tests/test_api.py`.
    * SQLAlchemy 2.0 models (`shops`, `products_offers`, `campaigns` incl. `FAILED` status, `qa_feedback`, `retry_count`, `error_message`) and the initial **Alembic** migration.
    * Implement `/healthz`, `/readyz`, `/shops`, `/shops/{shop_id}/assets` (MinIO upload), `/campaigns/generate` (Celery `.delay()` dispatch, `202`), `GET /campaigns/{id}`.
-3. **Implement Mocked LangGraph Pipeline:**
+3. ✅ **DONE — Step 4:** Celery worker + Beat (`worker/celery_app.py`, `worker/tasks.py`), LangGraph graph (`worker/graph/builder.py`), agents per layer (`worker/agents/`), mock FFmpeg renderer, Redis intelligence cache, `schedule_due_campaigns`, task retries/idempotency, `tests/test_agents.py`. **Implement Mocked LangGraph Pipeline:**
    * Build the LangGraph state machine with parallel intelligence nodes (`CalendarCulturalAgent`, `NewsTrendAgent`, `BrandCatalogAgent`) feeding into `CreativeDirectorAgent` -> `ProductionRouter` -> `QACriticAgent`, with the bounded retry loop and `mark_failed` node.
    * Ensure `MOCK_MODE=true` generates a valid dummy MP4/PNG (real FFmpeg encode) and uploads it to MinIO so end-to-end testing works immediately.
    * Add the `schedule_due_campaigns` Celery Beat task.
