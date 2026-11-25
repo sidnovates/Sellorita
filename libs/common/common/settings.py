@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     postgres_db: str = "sellorita_db"
     postgres_user: str = "sellorita"
     postgres_password: SecretStr = SecretStr("")
+    # Without a timeout, a connect to an unreachable host can hang for minutes, and a
+    # readiness probe or a pytest run would hang with it.
+    db_connect_timeout_seconds: int = 5
 
     # --- Redis -----------------------------------------------------------------------
     redis_host: str = "localhost"

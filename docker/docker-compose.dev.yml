@@ -1,0 +1,97 @@
+# Backing services only (PostgreSQL, Redis, MinIO) for local app development.
+# The API and worker run on the host from the venv and connect to localhost.
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d      # start
+#   docker compose -f docker/docker-compose.dev.yml ps         # all should be "healthy"
+#   docker compose -f docker/docker-compose.dev.yml down       # stop (data kept)
+#   docker compose -f docker/docker-compose.dev.yml down -v    # stop and wipe all data
+#
+# Credentials default to the local-only values in .env.example. To override them, run
+# with `--env-file .env` from the repo root.
+#
+# MinIO image note: MinIO no longer publishes community images (Docker Hub and quay.io
+# both refuse pulls since Sept 2026). We use the Pigsty community build of the same
+# AGPL source, pinned to a release tag. It keeps the admin web console, which the demo
+# uses to show rendered MP4s.
+
+name: sellorita-dev
+
+services:
+  postgres:
+    image: postgres:16.10-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sellorita_db}
+      POSTGRES_USER: ${POSTGRES_USER:-sellorita}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sellorita_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    # Append-only file: queued Celery tasks survive a container restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sellorita}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sellorita_dev}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console: http://localhost:9001
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      # The image has bash but no curl or grep, so bash's /dev/tcp sends a raw HTTP
+      # request and a bash pattern match checks the status line.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /minio/health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          read -r status <&3 && [[ $$status == *" 200 "* ]]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot job: creates the bucket once MinIO is healthy, then exits 0.
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-11-12T00-00-00Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sellorita}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sellorita_dev}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sellorita-media}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing "local/$$MINIO_BUCKET" &&
+        echo "bucket $$MINIO_BUCKET ready"
+    restart: "no"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

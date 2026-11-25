@@ -114,9 +114,11 @@ START ─┬─► calendar ─┐
 * **`shops`**: `id (UUID PK)`, `name`, `category`, `city`, `brand_primary_color`, `brand_secondary_color`, `brand_font`, `tone`, `logo_minio_key (nullable)`, `schedule_frequency` (`DAILY` | `TWICE_WEEKLY` | `THRICE_WEEKLY`), `created_at`
 * **`products_offers`**: `id (UUID PK)`, `shop_id (FK)`, `title`, `discount_text`, `minio_image_key`, `is_active`, `last_featured_at`
 * **`campaigns`**: `id (UUID PK)`, `shop_id (FK)`, `format` (`REEL` | `STATIC_POST` | `TWEET`), `status` (`QUEUED` | `PROCESSING` | `PENDING_REVIEW` | `APPROVED` | `REJECTED` | `PUBLISHED` | `FAILED`), `caption`, `hashtags (JSONB)`, `minio_output_key (nullable)`, `qa_feedback (nullable)`, `retry_count (int, default 0)`, `error_message (nullable)`, `agent_metadata (JSONB — intelligence outputs, creative brief, llm_usage, prompt versions)`, `trigger` (`MANUAL` | `SCHEDULED`), `scheduled_for`, `created_at`, `updated_at`
-* **Migrations:** managed by Alembic in `libs/common/migrations/`.
+* **Migrations:** managed by Alembic in `libs/common/common/migrations/` (inside the package, so every image that installs `sellorita-common` ships them). Run with the `sellorita-migrate` console script (= `alembic upgrade head` with the packaged config).
+* **Storage conventions:** UUID PKs generated in Python; enums stored as `VARCHAR` + named `CHECK` constraints (not native PG enums); all timestamps `timestamptz`; FKs `ON DELETE CASCADE`; index `ix_campaigns_shop_id_status` for the review queue.
 
 ### 4.2 MinIO Bucket Layout
+* **Image:** MinIO stopped publishing community images (Docker Hub and quay.io refuse pulls since Sept 2026). We use the **Pigsty community build** of the same AGPL source: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` and `pgsty/mc:RELEASE.2026-11-12T00-00-00Z`, which still include the web console. Pin these tags in compose and K8s.
 * **Bucket Name:** `sellorita-media`
   * `shops/{shop_id}/brand/logo.png`
   * `shops/{shop_id}/products/{product_id}.jpg`
@@ -170,7 +172,9 @@ sellorita/
 │       │   ├── models.py     # SQLAlchemy 2.0 models
 │       │   ├── schemas.py    # Pydantic API schemas + CampaignState
 │       │   └── storage.py    # MinIO clients (internal + public endpoints)
-│       ├── migrations/       # Alembic
+│       │   ├── migrate.py    # `sellorita-migrate` entrypoint (Alembic with packaged config)
+│       │   ├── alembic.ini
+│       │   └── migrations/   # Alembic env + versions/
 │       └── pyproject.toml
 ├── services/
 │   ├── api_gateway/          # FastAPI app (routers, dependencies)
