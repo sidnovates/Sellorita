@@ -1,0 +1,20 @@
+---
+# ==============================================================================
+# Sellorita Sensitive Secrets (Ansible Vault Target)
+# ==============================================================================
+# In enterprise production, this file is encrypted with:
+#   ansible-vault encrypt ansible/group_vars/all/vault.yml
+# To edit when encrypted:
+#   ansible-vault edit ansible/group_vars/all/vault.yml
+# ==============================================================================
+
+# Master Token for HashiCorp Vault Server
+vault_root_token: "sellorita-root-token"
+
+# Application Credentials Seeded into HashiCorp Vault (secret/data/sellorita/prod)
+vault_secrets:
+  POSTGRES_PASSWORD: "sellorita_dev"
+  MINIO_ROOT_USER: "sellorita"
+  MINIO_ROOT_PASSWORD: "sellorita_dev"
+  ANTHROPIC_API_KEY: "mock-key-vault-injected"
+  NEWS_API_KEY: "mock-news-key-vault"

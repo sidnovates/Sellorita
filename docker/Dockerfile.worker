@@ -1,0 +1,63 @@
+# Celery + HyperFrames Worker container
+# Reuses verified configuration from Dev A's spike (docs/hyperframes_spike.md)
+
+# Stage 1: Get Node 22 runtime from official image
+FROM node:22-bookworm-slim AS node
+
+# Stage 2: Main Python worker environment
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# 1. Copy Node.js binary and modules from Node stage
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# 2. Install FFmpeg, Chrome headless shared libraries, and font packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg ca-certificates unzip \
+        libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+        libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
+        libpango-1.0-0 libcairo2 libxshmfence1 libx11-xcb1 libxext6 libxss1 \
+        fonts-liberation fonts-noto-core fonts-noto-color-emoji \
+ && rm -rf /var/lib/apt/lists/*
+
+# 3. Install HyperFrames CLI and pre-download headless Chrome at BUILD time
+ENV HYPERFRAMES_VERSION=0.9.72 \
+    HYPERFRAMES_CHROME_SANDBOX=0
+RUN npm install -g hyperframes@${HYPERFRAMES_VERSION} \
+ && hyperframes browser ensure \
+ && mv /root/.cache/hyperframes/chrome /opt/hyperframes-chrome \
+ && ln -s "$(find /opt/hyperframes-chrome -type f -name chrome-headless-shell | head -1)" \
+          /usr/local/bin/chrome-headless-shell \
+ && chrome-headless-shell --version
+ENV PRODUCER_HEADLESS_SHELL_PATH=/usr/local/bin/chrome-headless-shell
+
+# 4. Vendor GSAP locally so animations render without external CDN dependencies
+RUN mkdir -p /opt/vendor && cd /tmp && npm pack gsap@3.12.5 >/dev/null \
+ && tar -xzf gsap-3.12.5.tgz && cp package/dist/gsap.min.js /opt/vendor/gsap.min.js \
+ && rm -rf /tmp/package /tmp/gsap-*.tgz
+
+WORKDIR /app
+
+# 5. Install shared library & worker dependencies
+COPY libs/common /opt/libs/common
+RUN pip install /opt/libs/common
+
+COPY services/agent_worker/requirements.txt .
+RUN pip install -r requirements.txt
+
+# 6. Copy worker code
+COPY services/agent_worker/worker ./worker
+
+# 7. Non-root user setup (UID 10001)
+RUN useradd --create-home --uid 10001 worker && chown -R worker:worker /app
+USER worker
+ENV HOME=/home/worker
+
+# Default command: runs the celery worker once configured, or python worker module
+CMD ["celery", "-A", "worker", "worker", "--loglevel=info"]

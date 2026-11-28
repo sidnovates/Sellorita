@@ -1,0 +1,4 @@
+---
+# Variables for the k8s_cluster role
+k3s_install_flags: "--write-kubeconfig-mode 644 --disable traefik" # Disables bundled Traefik so we can use standard Nginx/Ingress
+

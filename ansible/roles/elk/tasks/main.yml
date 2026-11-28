@@ -1,0 +1,106 @@
+---
+# Tasks for role: elk
+# Deploys Elasticsearch, Kibana, and Filebeat configured to ingest structured JSON logs.
+
+- name: Create ELK configuration directory
+  ansible.builtin.file:
+    path: "{{ elk_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Deploy Filebeat configuration for container JSON logs
+  ansible.builtin.copy:
+    dest: "{{ elk_dir }}/filebeat.yml"
+    mode: '0644'
+    content: |
+      filebeat.inputs:
+        - type: container
+          paths:
+            - '/var/lib/docker/containers/*/*.log'
+          json.keys_under_root: true
+          json.add_error_key: true
+
+      output.elasticsearch:
+        hosts: ["elasticsearch:9200"]
+        indices:
+          - index: "{{ elk_index_prefix }}-%{+yyyy.MM.dd}"
+
+      setup.ilm.enabled: false
+      setup.template.name: "{{ elk_index_prefix }}"
+      setup.template.pattern: "{{ elk_index_prefix }}-*"
+
+- name: Deploy Docker Compose file for ELK Stack
+  ansible.builtin.copy:
+    dest: "{{ elk_dir }}/docker-compose.yml"
+    mode: '0644'
+    content: |
+      services:
+        elasticsearch:
+          image: docker.elastic.co/elasticsearch/elasticsearch:{{ elastic_version }}
+          container_name: sellorita-elasticsearch
+          restart: unless-stopped
+          environment:
+            - discovery.type=single-node
+            - xpack.security.enabled=false
+            - ES_JAVA_OPTS={{ es_java_memory }}
+          ports:
+            - "{{ elasticsearch_port }}:9200"
+          volumes:
+            - es_data:/usr/share/elasticsearch/data
+          healthcheck:
+            test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status'"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+
+        kibana:
+          image: docker.elastic.co/kibana/kibana:{{ elastic_version }}
+          container_name: sellorita-kibana
+          restart: unless-stopped
+          environment:
+            - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+            - XPACK_SECURITY_ENABLED=false
+          ports:
+            - "{{ kibana_port }}:5601"
+          depends_on:
+            elasticsearch:
+              condition: service_healthy
+
+        filebeat:
+          image: docker.elastic.co/beats/filebeat:{{ elastic_version }}
+          container_name: sellorita-filebeat
+          restart: unless-stopped
+          user: root
+          volumes:
+            - {{ elk_dir }}/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+            - /var/lib/docker/containers:/var/lib/docker/containers:ro
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+          depends_on:
+            elasticsearch:
+              condition: service_healthy
+
+      volumes:
+        es_data:
+
+- name: Pull and start ELK Stack containers
+  ansible.builtin.shell: |
+    docker compose -f {{ elk_dir }}/docker-compose.yml up -d
+  changed_when: true
+
+- name: Wait for Elasticsearch API to respond on port 9200
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_cluster/health"
+    status_code: 200
+  register: es_status
+  until: es_status.status == 200
+  retries: 25
+  delay: 5
+
+- name: Verify Kibana endpoint is responding
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/status"
+    status_code: 200
+  register: kibana_status
+  until: kibana_status.status == 200
+  retries: 25
+  delay: 5

@@ -1,0 +1,11 @@
+---
+# Handlers for common role
+- name: restart docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+    daemon_reload: true
+
+- name: apply sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
