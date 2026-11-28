@@ -21,6 +21,7 @@ import sys
 from typing import Any
 
 import structlog
+import structlog.tracebacks
 from structlog.types import EventDict, Processor, WrappedLogger
 
 from common.settings import get_settings
@@ -48,12 +49,14 @@ def _drop_color_message(_: WrappedLogger, __: str, event_dict: EventDict) -> Eve
     return event_dict
 
 
-def _service_adder(service_name: str) -> Processor:
-    def add_service(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
-        event_dict.setdefault("service", service_name)
-        return event_dict
+# Read at log time, not captured at configure time: structlog caches loggers with the
+# processor chain they were created with, so a value captured in a closure would stick.
+_service_name = "sellorita"
 
-    return add_service
+
+def _add_service(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
+    event_dict.setdefault("service", _service_name)
+    return event_dict
 
 
 def configure_logging(
@@ -62,8 +65,9 @@ def configure_logging(
     json_logs: bool | None = None,
 ) -> None:
     """Configure structlog and the stdlib root logger. Safe to call more than once."""
+    global _service_name
     settings = get_settings()
-    service_name = service_name or settings.service_name
+    _service_name = service_name or settings.service_name
     level = (level or settings.log_level).upper()
     json_logs = settings.log_json if json_logs is None else json_logs
 
@@ -76,7 +80,7 @@ def configure_logging(
         _drop_color_message,
         _uppercase_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
-        _service_adder(service_name),
+        _add_service,
     ]
 
     structlog.configure(
@@ -90,7 +94,11 @@ def configure_logging(
     if json_logs:
         # Exceptions become structured objects instead of one giant string.
         final_processors += [
-            structlog.processors.dict_tracebacks,
+            # show_locals=False: frame locals can hold secrets (DB connection strings,
+            # API keys, request bodies) and must never be shipped to Elasticsearch.
+            structlog.processors.ExceptionRenderer(
+                structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+            ),
             structlog.processors.JSONRenderer(),
         ]
     else:

@@ -15,7 +15,8 @@ def make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **overrides)
 
 
-def test_derived_urls_use_correct_drivers_and_redis_dbs():
+def test_derived_urls_use_correct_drivers_and_redis_dbs(monkeypatch):
+    monkeypatch.delenv("REDIS_CACHE_DB", raising=False)  # set by the test-cache fixture
     s = make_settings(postgres_password="p@ss/word", redis_host="redis")
     assert s.database_url.startswith("postgresql+asyncpg://sellorita:p%40ss%2Fword@")
     assert s.database_url_sync.startswith("postgresql+psycopg://")
@@ -83,3 +84,21 @@ def test_campaign_state_minimal_construction():
     }
     assert state["target_format"] == "TWEET"  # StrEnum compares equal to its string
     assert CampaignStatus.FAILED == "FAILED"
+
+
+def test_exception_logs_never_include_frame_locals(capsys):
+    configure_logging(service_name="api-gateway", level="INFO", json_logs=True)
+
+    def connect():
+        password = "hunter2-db-secret"  # noqa: F841  (a local that must not be logged)
+        raise ConnectionError("db down")
+
+    try:
+        connect()
+    except ConnectionError:
+        get_logger("test").exception("db_failed")
+
+    out = capsys.readouterr().out
+    assert "hunter2-db-secret" not in out
+    record = json.loads(out.strip().splitlines()[-1])
+    assert record["exception"][0]["exc_type"] == "ConnectionError"

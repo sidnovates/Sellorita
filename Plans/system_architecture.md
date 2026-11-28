@@ -63,6 +63,7 @@ class CampaignState(TypedDict):
     calendar_context: dict       # {"date": str, "upcoming_festival": str, "days_away": int}
     news_trend_context: dict     # {"local_hook": str, "weather": str, "safe_to_use": bool}
     brand_catalog: dict          # {"name": str, "colors": list[str], "font": str, "offer": str, "asset_keys": list[str]}
+                                 #   + optional "category", "city", "tone", "featured_product_id" (shop context for the director)
     # Populated by Strategy Layer
     creative_brief: dict         # {"hook": str, "script": str, "caption": str, "hashtags": list[str], "cta": str, "theme": str}
     # Populated by Production Layer
@@ -102,6 +103,13 @@ START ─┬─► calendar ─┐
                                                               done ─► END  /  fail ─► mark_failed ─► END
 ```
 
+### Error Handling (implemented in Step 4)
+* **Fatal** (e.g. shop missing): the node raises, the task marks the campaign `FAILED`.
+* **Optional intelligence** (calendar, news): the node *degrades* to a neutral fallback and logs `status=DEGRADED`; the campaign is still produced.
+* **Production errors** (render/upload): written to `state.error`; the QA critic rejects the attempt, so it is retried like a quality failure.
+* **Transient infrastructure errors** (Postgres/Redis connection): the Celery task retries with exponential backoff (max 5); after that the campaign is marked `FAILED`. A campaign never stays in `QUEUED`/`PROCESSING`.
+* **Idempotency:** a task for a campaign that is no longer `QUEUED`/`PROCESSING` is skipped, so a redelivered message never regenerates a finished campaign.
+
 ### Prompt Versioning
 * Each agent's prompt lives in `prompts/{agent_name}/v{N}.md`. The active version is selected via settings (default: latest).
 * The prompt version used by each node is recorded in `llm_usage` and persisted to `campaigns.agent_metadata`.
@@ -114,16 +122,19 @@ START ─┬─► calendar ─┐
 * **`shops`**: `id (UUID PK)`, `name`, `category`, `city`, `brand_primary_color`, `brand_secondary_color`, `brand_font`, `tone`, `logo_minio_key (nullable)`, `schedule_frequency` (`DAILY` | `TWICE_WEEKLY` | `THRICE_WEEKLY`), `created_at`
 * **`products_offers`**: `id (UUID PK)`, `shop_id (FK)`, `title`, `discount_text`, `minio_image_key`, `is_active`, `last_featured_at`
 * **`campaigns`**: `id (UUID PK)`, `shop_id (FK)`, `format` (`REEL` | `STATIC_POST` | `TWEET`), `status` (`QUEUED` | `PROCESSING` | `PENDING_REVIEW` | `APPROVED` | `REJECTED` | `PUBLISHED` | `FAILED`), `caption`, `hashtags (JSONB)`, `minio_output_key (nullable)`, `qa_feedback (nullable)`, `retry_count (int, default 0)`, `error_message (nullable)`, `agent_metadata (JSONB — intelligence outputs, creative brief, llm_usage, prompt versions)`, `trigger` (`MANUAL` | `SCHEDULED`), `scheduled_for`, `created_at`, `updated_at`
-* **Migrations:** managed by Alembic in `libs/common/migrations/`.
+* **Migrations:** managed by Alembic in `libs/common/common/migrations/` (inside the package, so every image that installs `sellorita-common` ships them). Run with the `sellorita-migrate` console script (= `alembic upgrade head` with the packaged config).
+* **Storage conventions:** UUID PKs generated in Python; enums stored as `VARCHAR` + named `CHECK` constraints (not native PG enums); all timestamps `timestamptz`; FKs `ON DELETE CASCADE`; index `ix_campaigns_shop_id_status` for the review queue.
 
 ### 4.2 MinIO Bucket Layout
+* **Image:** MinIO stopped publishing community images (Docker Hub and quay.io refuse pulls since Sept 2026). We use the **Pigsty community build** of the same AGPL source: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` and `pgsty/mc:RELEASE.2026-11-12T00-00-00Z`, which still include the web console. Pin these tags in compose and K8s.
 * **Bucket Name:** `sellorita-media`
   * `shops/{shop_id}/brand/logo.png`
   * `shops/{shop_id}/products/{product_id}.jpg`
   * `shops/{shop_id}/outputs/{campaign_id}.mp4` (or `.png`)
 * **Presigned URL rule:** a presigned URL's signature includes the host, so two clients are configured:
   * `MINIO_INTERNAL_ENDPOINT` (e.g. `http://minio:9000`) — used by workers/Chromium inside the cluster.
-  * `MINIO_PUBLIC_ENDPOINT` (e.g. `http://<ingress-host>/media`) — used to sign URLs returned to the browser.
+  * `MINIO_PUBLIC_ENDPOINT` (e.g. `http://<ingress-host>`) — used to sign URLs returned to the browser.
+  * The signature also covers the **path** and the `Host` header. URLs are path-style (`<endpoint>/sellorita-media/<key>`), so the ingress must route `/sellorita-media/` to `minio:9000` **without rewriting the path** and must preserve `Host`. Do not use a stripped prefix like `/media`: MinIO would see a different path than was signed and return `403 SignatureDoesNotMatch`.
 
 ### 4.3 Redis Key Conventions
 * Celery Broker: DB `0`; Celery Result Backend: DB `1`
@@ -170,7 +181,9 @@ sellorita/
 │       │   ├── models.py     # SQLAlchemy 2.0 models
 │       │   ├── schemas.py    # Pydantic API schemas + CampaignState
 │       │   └── storage.py    # MinIO clients (internal + public endpoints)
-│       ├── migrations/       # Alembic
+│       │   ├── migrate.py    # `sellorita-migrate` entrypoint (Alembic with packaged config)
+│       │   ├── alembic.ini
+│       │   └── migrations/   # Alembic env + versions/
 │       └── pyproject.toml
 ├── services/
 │   ├── api_gateway/          # FastAPI app (routers, dependencies)
