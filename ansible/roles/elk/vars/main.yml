@@ -1,0 +1,5 @@
+---
+# Variables for ELK Stack Role
+elk_dir: "/opt/sellorita/elk"
+es_java_memory: "-Xms512m -Xmx512m" # Sized to run smoothly on dev/course VMs
+elk_index_prefix: "sellorita-logs"

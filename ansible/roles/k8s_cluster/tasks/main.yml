@@ -1,0 +1,89 @@
+---
+# Tasks for role: k8s_cluster
+# Installs K3s, configures kubectl, installs Helm, and deploys KEDA for autoscaling.
+
+# --- 1. Check if K3s binary already exists ------------------------------------
+- name: Check if K3s binary already exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+# --- 2. Install K3s (Lightweight Kubernetes) ---------------------------------
+- name: Download and install K3s
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - {{ k3s_install_flags }}
+  when: not k3s_binary.stat.exists
+
+- name: Ensure K3s service is enabled and running
+  ansible.builtin.systemd:
+    name: k3s
+    enabled: true
+    state: started
+
+# --- 3. Ensure kubectl symlink to k3s binary exists --------------------------
+- name: Create kubectl symlink pointing to k3s
+  ansible.builtin.file:
+    src: /usr/local/bin/k3s
+    dest: /usr/local/bin/kubectl
+    state: link
+    force: true
+
+# --- 4. Configure kubectl for current user -----------------------------------
+- name: Create .kube directory in user home
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/.kube"
+    state: directory
+    mode: '0755'
+
+- name: Copy K3s kubeconfig to user .kube/config
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ ansible_facts['env']['HOME'] }}/.kube/config"
+    remote_src: true
+    mode: '0600'
+    owner: "{{ ansible_facts['env']['USER'] }}"
+
+# --- 5. Wait for Node to be Ready --------------------------------------------
+- name: Wait for Kubernetes node to be in Ready state
+  ansible.builtin.shell: |
+    /usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
+  register: node_ready
+  until: node_ready.stdout == "True"
+  retries: 20
+  delay: 5
+  changed_when: false
+
+# --- 6. Install Helm (Kubernetes Package Manager) ------------------------------
+- name: Check if Helm is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: helm_binary
+
+- name: Install Helm 3
+  ansible.builtin.shell: |
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh
+    ./get_helm.sh --version "{{ helm_version }}"
+    rm -f get_helm.sh
+  when: not helm_binary.stat.exists
+
+# --- 7. Deploy KEDA (Kubernetes Event-driven Autoscaling) ----------------------
+- name: Check if KEDA is already installed
+  ansible.builtin.shell: |
+    /usr/local/bin/k3s kubectl get namespace keda --no-headers 2>/dev/null || true
+  register: keda_namespace
+  changed_when: false
+
+- name: Deploy KEDA operator and CRDs
+  ansible.builtin.shell: |
+    /usr/local/bin/k3s kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v{{ keda_version }}/keda-{{ keda_version }}.yaml
+  when: "'keda' not in keda_namespace.stdout"
+
+- name: Wait for KEDA operator pod to be running
+  ansible.builtin.shell: |
+    /usr/local/bin/k3s kubectl get pods -n keda -l app=keda-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Pending"
+  register: keda_status
+  until: keda_status.stdout == "Running"
+  retries: 25
+  delay: 6
+  changed_when: false

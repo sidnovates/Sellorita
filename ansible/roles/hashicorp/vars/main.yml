@@ -1,0 +1,4 @@
+---
+
+vault_storage_dir: "/opt/vault/data"
+vault_config_dir: "/etc/vault.d"

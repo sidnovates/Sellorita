@@ -1,0 +1,19 @@
+---
+
+app_env: prod
+project_name: sellorita
+
+# --- Centralized Component Versions (Infrastructure as Code) -----------------
+vault_version: "1.17.2"
+k3s_version: "v1.30.2+k3s1"
+keda_version: "2.14.0"
+helm_version: "v3.15.2"
+elastic_version: "8.14.3"
+
+# --- Shared Ports & Network Endpoints ----------------------------------------
+vault_port: 8200
+vault_addr: "http://127.0.0.1:8200"
+vault_secret_path: "secret/sellorita/prod"
+
+elasticsearch_port: 9200
+kibana_port: 5601

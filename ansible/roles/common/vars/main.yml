@@ -1,0 +1,18 @@
+---
+# Variables for the common role
+common_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - unzip
+
+sysctl_settings:
+  - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+  - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+  - { name: "net.ipv4.ip_forward", value: "1" }
+
+kernel_modules:
+  - overlay
+  - br_netfilter

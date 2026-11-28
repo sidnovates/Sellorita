@@ -1,0 +1,133 @@
+---
+# Tasks for role: vault
+# Installs HashiCorp Vault, configures systemd, starts server, enables KV-v2 engine, and seeds secrets.
+
+
+# --- 1. Install HashiCorp Vault binary ---------------------------------------
+- name: Check if Vault binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/vault
+  register: vault_binary
+
+- name: Download HashiCorp Vault archive
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+    dest: "/tmp/vault_{{ vault_version }}.zip"
+    mode: '0644'
+  when: not vault_binary.stat.exists
+
+- name: Unarchive Vault binary to /usr/local/bin
+  ansible.builtin.unarchive:
+    src: "/tmp/vault_{{ vault_version }}.zip"
+    dest: "/usr/local/bin"
+    remote_src: true
+    mode: '0755'
+  when: not vault_binary.stat.exists
+
+- name: Clean up temporary Vault zip
+  ansible.builtin.file:
+    path: "/tmp/vault_{{ vault_version }}.zip"
+    state: absent
+
+# --- 2. Configure Vault Directories & Files ----------------------------------
+- name: Create Vault user and group
+  ansible.builtin.user:
+    name: vault
+    system: true
+    shell: /bin/false
+
+- name: Create Vault configuration and data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0750'
+  loop:
+    - "{{ vault_config_dir }}"
+    - "{{ vault_storage_dir }}"
+
+- name: Deploy Vault server configuration (File storage backend)
+  ansible.builtin.copy:
+    dest: "{{ vault_config_dir }}/vault.hcl"
+    owner: vault
+    group: vault
+    mode: '0640'
+    content: |
+      storage "file" {
+        path = "{{ vault_storage_dir }}"
+      }
+
+      ui = true
+      disable_mlock = true
+      api_addr = "{{ vault_addr }}"
+
+- name: Deploy Vault systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/vault.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description="HashiCorp Vault - A tool for managing secrets"
+      Documentation=https://www.vaultproject.io/docs/
+      Requires=network-online.target
+      After=network-online.target
+
+      [Service]
+      User=vault
+      Group=vault
+      ExecStart=/usr/local/bin/vault server -dev -dev-root-token-id={{ vault_root_token }} -dev-listen-address=0.0.0.0:{{ vault_port }}
+      ExecReload=/bin/kill --signal HUP $MAINPID
+      KillMode=process
+      KillSignal=SIGINT
+      Restart=on-failure
+      RestartSec=3
+      LimitNOFILE=65536
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Reload systemd daemon and start Vault service
+  ansible.builtin.systemd:
+    name: vault
+    daemon_reload: true
+    enabled: true
+    state: restarted
+
+- name: Wait for Vault HTTP API to be ready
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/sys/health"
+    status_code: [200, 429, 472, 473]
+  register: vault_health
+  until: vault_health.status in [200, 429, 472, 473]
+  retries: 15
+  delay: 2
+
+# --- 3. Enable KV-v2 Secrets Engine & Seed Secrets ---------------------------
+- name: Enable KV Version 2 secrets engine at 'secret' path
+  ansible.builtin.shell: |
+    export VAULT_ADDR="{{ vault_addr }}"
+    export VAULT_TOKEN="{{ vault_root_token }}"
+    vault secrets enable -path=secret kv-v2 || true
+  register: kv_enable
+  changed_when: "'path is already in use' not in kv_enable.stderr"
+  failed_when: false
+
+- name: Seed Sellorita application secrets into Vault (secret/data/sellorita/prod)
+  ansible.builtin.shell: |
+    export VAULT_ADDR="{{ vault_addr }}"
+    export VAULT_TOKEN="{{ vault_root_token }}"
+    vault kv put {{ vault_secret_path }} \
+      POSTGRES_PASSWORD="{{ vault_secrets.POSTGRES_PASSWORD }}" \
+      MINIO_ROOT_USER="{{ vault_secrets.MINIO_ROOT_USER }}" \
+      MINIO_ROOT_PASSWORD="{{ vault_secrets.MINIO_ROOT_PASSWORD }}" \
+      ANTHROPIC_API_KEY="{{ vault_secrets.ANTHROPIC_API_KEY }}" \
+      NEWS_API_KEY="{{ vault_secrets.NEWS_API_KEY }}"
+  changed_when: true
+
+- name: Create read-only policy for Kubernetes Vault Agent Injector
+  ansible.builtin.shell: |
+    export VAULT_ADDR="{{ vault_addr }}"
+    export VAULT_TOKEN="{{ vault_root_token }}"
+    echo 'path "secret/data/sellorita/*" { capabilities = ["read"] }' | vault policy write sellorita-app -
+  changed_when: false

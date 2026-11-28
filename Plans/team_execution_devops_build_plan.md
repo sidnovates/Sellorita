@@ -45,16 +45,16 @@ Dev A's track is heavier in Phases 1–2, so:
 ### Developer B Tasks
 1. **GitHub Repository & Branch Protection:**
    * Create GitHub repo with `main` (protected) and `dev` branches; configure GitHub Webhooks pointing to Jenkins.
-2. **Multi-Stage Dockerfiles & Local Compose:**
+2. ✅ **DONE.** **Multi-Stage Dockerfiles & Local Compose:**
    * Write `docker/Dockerfile.api` (lightweight Python slim image, installs `libs/common`).
    * Write `docker/Dockerfile.worker` (Python + Node.js + Chromium + FFmpeg + HyperFrames, using Dev A's spike notes).
    * Write `docker/Dockerfile.frontend` (Vite build stage → nginx runtime) and `docker/nginx.conf` (serves SPA, proxies `/api` to api-gateway).
    * Write `docker/docker-compose.yml` spinning up `api-gateway`, `agent-worker`, `celery-beat`, `frontend`, `postgres`, `redis`, and `minio` (with automatic bucket initialization `sellorita-media`) and a one-shot `migrate` service (`alembic upgrade head`).
-3. **Provision Target Infrastructure via Ansible (Modular Roles):**
+3. ✅ **DONE.** **Provision Target Infrastructure via Ansible (Modular Roles):**
    * Create `ansible/site.yml` with distinct roles:
      * `roles/common`: Installs Docker, utilities, and configures host networking.
      * `roles/k8s_cluster`: Sets up K3s / Kubernetes cluster on target VM(s), incl. KEDA.
-     * `roles/vault`: Deploys HashiCorp Vault and seeds `secret/data/sellorita/prod`.
+     * `roles/hashicorp`: Deploys HashiCorp Vault and seeds `secret/data/sellorita/prod`.
      * `roles/elk`: Deploys Elasticsearch, Logstash/Filebeat, and Kibana.
 
 **Phase 1 Milestone Checkpoint:** Running `docker compose up` locally allows creating a shop, uploading a product photo, triggering a campaign, and seeing a generated MP4/PNG appear in MinIO, the campaign reaching `PENDING_REVIEW`, with JSON logs printed to stdout.
