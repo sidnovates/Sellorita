@@ -32,3 +32,5 @@ renders/
 Thumbs.db
 
 Plans/README.md
+# Celery Beat local schedule state
+celerybeat-schedule*

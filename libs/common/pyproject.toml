@@ -11,7 +11,28 @@ dependencies = [
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3,<3",
     "structlog>=24.1",
+    # Database: SQLAlchemy 2.0 ORM, async driver for the API, sync driver for the
+    # worker and Alembic. Both services share the models, so both drivers live here.
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2,<4",
+    "alembic>=1.14,<2",
+    # Object storage: boto3 speaks plain S3, so it works with MinIO or any S3 drop-in.
+    "boto3>=1.35,<2",
+    # Task queue: the API only publishes tasks, the worker consumes them; both share
+    # the same Celery configuration from common/queue.py. [redis] pulls in redis-py.
+    "celery[redis]>=5.4,<6",
 ]
+
+[project.scripts]
+# `sellorita-migrate` = `alembic upgrade head` with the packaged config. Any other
+# Alembic command works too: `sellorita-migrate downgrade -1`, `sellorita-migrate current`.
+sellorita-migrate = "common.migrate:main"
+
+[tool.setuptools.package-data]
+# Ship the Alembic config and migration scripts with the package, so any image that
+# installs sellorita-common can run `alembic upgrade head`.
+common = ["alembic.ini", "migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
 
 [tool.setuptools.packages.find]
 include = ["common*"]
